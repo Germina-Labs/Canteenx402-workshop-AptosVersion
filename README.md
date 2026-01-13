@@ -1,36 +1,124 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Aptos Fortune Cookie 🥠
 
-## Getting Started
+A demonstration of the [aptos-x402](https://aptos-x402.vercel.app) payment protocol using Next.js on Aptos Testnet.
 
-First, run the development server:
+## Overview
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+This project shows how to implement HTTP 402 Payment Required flows on **Aptos** using the aptos-x402 library. It mirrors the EVM Fortune Cookie implementation to demonstrate x402 across different blockchain ecosystems.
+
+## Tech Stack
+
+- **Framework**: Next.js 16 (App Router)
+- **Payment Protocol**: aptos-x402
+- **Blockchain**: Aptos Testnet
+- **Currency**: APT (native token)
+
+## How It Works
+
+```
+User clicks "Open Fortune Cookie"
+         ↓
+1. Client makes request to /api/fortune via x402axios
+2. Middleware returns 402 + payment requirements
+3. x402axios automatically:
+   - Signs payment with Aptos private key
+   - Sends to aptos-x402 facilitator
+   - Retries request with payment proof
+4. Server returns fortune
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+## Setup
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+### 1. Install Dependencies
+```bash
+npm install
+```
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+### 2. Configure Environment
+Copy the example env file and add your credentials:
+```bash
+cp env.example .env.local
+```
 
-## Learn More
+Edit `.env.local`:
+```env
+# Recipient address (receives payments)
+PAYMENT_RECIPIENT_ADDRESS=0xyour_aptos_address
 
-To learn more about Next.js, take a look at the following resources:
+# Your private key for signing (payer)
+NEXT_PUBLIC_APTOS_PRIVATE_KEY=0xyour_private_key
+```
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+### 3. Get Testnet APT
+1. Visit [Aptos Faucet](https://aptoslabs.com/testnet-faucet)
+2. Enter your wallet address
+3. Request testnet APT
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+### 4. Run Development Server
+```bash
+npm run dev -- -p 3001
+```
 
-## Deploy on Vercel
+Open [http://localhost:3001](http://localhost:3001)
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+## Project Structure
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+```
+aptos-fortune/
+├── app/
+│   ├── api/fortune/route.ts   # Protected API endpoint
+│   ├── page.tsx               # Frontend with x402axios
+│   ├── providers.tsx          # React providers
+│   └── layout.tsx             # App layout
+├── middleware.ts              # aptos-x402 payment middleware
+├── env.example                # Environment template
+└── package.json
+```
+
+## EVM vs Aptos Comparison
+
+| Aspect | EVM (x402) | Aptos (aptos-x402) |
+|--------|------------|-------------------|
+| **Package** | `@x402/next` | `aptos-x402` |
+| **Middleware** | `paymentProxy` | `paymentMiddleware` |
+| **Client** | `x402Client` + `wrapFetchWithPayment` | `x402axios` |
+| **Currency** | USDC | APT |
+| **Network** | `eip155:84532` | `aptos-testnet` |
+
+## Key Files
+
+### `middleware.ts`
+```typescript
+import { paymentMiddleware } from 'aptos-x402';
+
+export default paymentMiddleware(
+  process.env.PAYMENT_RECIPIENT_ADDRESS!,
+  { '/api/fortune': { price: '1000000', network: 'aptos-testnet' } },
+  { url: 'https://aptos-x402.vercel.app/api/facilitator' }
+);
+```
+
+### `app/page.tsx`
+```typescript
+import { x402axios } from 'aptos-x402';
+
+const response = await x402axios.get('/api/fortune', {
+  privateKey: process.env.NEXT_PUBLIC_APTOS_PRIVATE_KEY!
+});
+```
+
+## Security Notes
+
+⚠️ **Never commit `.env.local`** - it contains your private key
+- The `.gitignore` already excludes all `.env*` files
+- For production, use proper secret management
+
+## Resources
+
+- [aptos-x402 Documentation](https://aptos-x402.vercel.app/docs)
+- [Aptos Explorer](https://explorer.aptoslabs.com)
+- [Aptos Faucet](https://aptoslabs.com/testnet-faucet)
+
+## License
+
+MIT
