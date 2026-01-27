@@ -1,7 +1,9 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { x402axios } from "aptos-x402";
+import { x402Client, wrapFetchWithPayment, decodePaymentResponseHeader } from "@rvk_rishikesh/fetch";
+import { registerExactAptosScheme } from "@rvk_rishikesh/aptos/exact/client";
+import { Account, Ed25519PrivateKey } from "@aptos-labs/ts-sdk";
 
 export default function Home() {
   const [loading, setLoading] = useState(false);
@@ -10,22 +12,44 @@ export default function Home() {
   const [walletAddress, setWalletAddress] = useState<string | null>(null);
   const [txHash, setTxHash] = useState<string | null>(null);
   const [showReveal, setShowReveal] = useState(false);
+  const [fetchWithPayment, setFetchWithPayment] = useState<((input: RequestInfo, init?: RequestInit) => Promise<Response>) | null>(null);
 
   const APTOS_PRIVATE_KEY = process.env.NEXT_PUBLIC_APTOS_PRIVATE_KEY;
 
-  // Initialize wallet from private key
+  // Initialize wallet and x402 client
   useEffect(() => {
     if (APTOS_PRIVATE_KEY) {
-      // Extract address from private key (first few chars for display)
-      // In real implementation, derive address from key
-      const keySnippet = APTOS_PRIVATE_KEY.slice(0, 10) + "...";
-      setWalletAddress(keySnippet);
+      try {
+        // Handle 0x prefix if present
+        const privateKeyHex = APTOS_PRIVATE_KEY.startsWith('0x')
+          ? APTOS_PRIVATE_KEY.slice(2)
+          : APTOS_PRIVATE_KEY;
+
+        const privateKey = new Ed25519PrivateKey(privateKeyHex);
+        const aptosAccount = Account.fromPrivateKey({ privateKey });
+
+        setWalletAddress(aptosAccount.accountAddress.toString());
+
+        // Initialize x402 Client V2
+        const client = new x402Client();
+
+        // Register Aptos Scheme with the signer
+        registerExactAptosScheme(client, { signer: aptosAccount });
+
+        // Wrap fetch
+        const wrappedFetch = wrapFetchWithPayment(fetch, client);
+        setFetchWithPayment(() => wrappedFetch);
+
+      } catch (err: any) {
+        console.error("Wallet initialization failed", err);
+        setError("Failed to initialize wallet: " + err.message);
+      }
     }
   }, [APTOS_PRIVATE_KEY]);
 
   const handleGetFortune = async () => {
-    if (!APTOS_PRIVATE_KEY) {
-      setError("Please set NEXT_PUBLIC_APTOS_PRIVATE_KEY in .env.local");
+    if (!fetchWithPayment) {
+      setError("Wallet not initialized. Check configuration.");
       return;
     }
 
@@ -36,29 +60,33 @@ export default function Home() {
     setShowReveal(false);
 
     try {
-      // x402axios automatically handles 402 payment flow
-      const response = await x402axios.get<{ fortune: string }>(
-        "/api/fortune",
-        { privateKey: APTOS_PRIVATE_KEY }
-      );
+      // V2 Client automatically handles 402, payment construction, and sponsoring
+      const response = await fetchWithPayment("/api/fortune");
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.error || "Request failed");
+      }
 
       // Show reveal animation
       setShowReveal(true);
       setTimeout(() => {
-        setFortune(response.data.fortune);
-        if (response.paymentInfo?.transactionHash) {
-          setTxHash(response.paymentInfo.transactionHash);
+        setFortune(data.fortune);
+
+        // Extract transaction hash from V2 header if available (simplified check)
+        const paymentResponse = response.headers.get("PAYMENT-RESPONSE");
+        if (paymentResponse) {
+          try {
+            const decoded = decodePaymentResponseHeader(paymentResponse);
+            const hash = (decoded as any)?.transaction;
+            if (hash) setTxHash(hash);
+          } catch (e) { console.error(e) }
         }
       }, 600);
     } catch (err: any) {
       console.error("Error:", err);
-      if (err.code === "INSUFFICIENT_BALANCE") {
-        setError("Insufficient APT balance. Get testnet APT from faucet.");
-      } else if (err.code === "NETWORK_ERROR") {
-        setError("Network error. Please try again.");
-      } else {
-        setError(err.message || "Something went wrong");
-      }
+      setError(err.message || "Something went wrong");
     } finally {
       setLoading(false);
     }
@@ -86,7 +114,7 @@ export default function Home() {
             🥠 Fortune Cookie
           </h1>
           <p className="text-teal-400/80 text-sm tracking-wide">
-            Powered by aptos-x402
+            Powered by aptos-x402 V2
           </p>
         </div>
 
@@ -100,6 +128,7 @@ export default function Home() {
                   ? "Connecting to Aptos realm..."
                   : "Set NEXT_PUBLIC_APTOS_PRIVATE_KEY in .env.local"}
               </p>
+              {error && <p className="text-red-400 text-sm">{error}</p>}
             </div>
           ) : (
             <div className="space-y-6">
@@ -150,17 +179,23 @@ export default function Home() {
                 )}
               </div>
 
-              {/* Transaction Link */}
+              {/* Transaction Info */}
               {txHash && (
-                <div className="text-center">
-                  <a
-                    href={`https://explorer.aptoslabs.com/txn/${txHash}?network=testnet`}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="text-teal-400 hover:text-teal-300 text-sm underline"
-                  >
-                    View Payment Transaction →
-                  </a>
+                <div className="bg-zinc-900/40 rounded-lg p-3 border border-teal-900/50 animate-fade-in">
+                  <div className="flex flex-col gap-2">
+                    <span className="text-xs text-zinc-500 uppercase tracking-widest font-bold">Transaction Confirmed</span>
+                    <code className="text-[10px] text-teal-300 font-mono break-all bg-black/20 p-2 rounded">
+                      {txHash}
+                    </code>
+                    <a
+                      href={`https://explorer.aptoslabs.com/txn/${txHash}?network=testnet`}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="text-xs text-teal-400 hover:text-teal-200 underline mt-1"
+                    >
+                      View on Aptos Explorer &rarr;
+                    </a>
+                  </div>
                 </div>
               )}
 
@@ -174,7 +209,7 @@ export default function Home() {
               {/* Action Button */}
               <button
                 onClick={handleGetFortune}
-                disabled={loading || !APTOS_PRIVATE_KEY}
+                disabled={loading || !fetchWithPayment}
                 className="w-full py-4 px-6 bg-gradient-to-r from-teal-500 to-emerald-500 hover:from-teal-400 hover:to-emerald-400 disabled:from-zinc-600 disabled:to-zinc-600 disabled:cursor-not-allowed rounded-xl font-bold text-lg text-zinc-900 transition-all duration-300 shadow-lg shadow-teal-500/25 hover:shadow-teal-500/40 hover:scale-[1.02] active:scale-[0.98]"
                 type="button"
               >

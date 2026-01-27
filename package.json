@@ -9,10 +9,13 @@
     "lint": "eslint"
   },
   "dependencies": {
-    "@aptos-labs/ts-sdk": "^1.39.0",
-    "@aptos-labs/wallet-adapter-react": "^7.2.8",
-    "@pontem/wallet-adapter-plugin": "^0.2.1",
-    "aptos-x402": "^2.0.2",
+    "@aptos-labs/ts-sdk": "^5.2.1",
+    "@aptos-labs/wallet-adapter-react": "^3.3.0",
+    "@rvk_rishikesh/aptos": "^2.1.0",
+    "@rvk_rishikesh/core": "^2.2.0",
+    "@rvk_rishikesh/fetch": "^2.2.0",
+    "@rvk_rishikesh/next": "^2.2.1",
+    "lucide-react": "^0.562.0",
     "next": "16.1.1",
     "petra-plugin-wallet-adapter": "^0.4.5",
     "react": "19.2.3",
@@ -26,6 +29,8 @@
     "eslint": "^9",
     "eslint-config-next": "16.1.1",
     "tailwindcss": "^4",
-    "typescript": "^5"
+    "typescript": "^5",
+    "webpack": "^5.90.0",
+    "got": "^14.0.0"
   }
 }
